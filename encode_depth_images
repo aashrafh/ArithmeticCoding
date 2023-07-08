@@ -1,0 +1,112 @@
+def get_binaryStr_within_range(l, u):
+    i = 1
+    num = 0
+    binaryStr = ''
+    while not (num >= l and num < u):
+        decimal_pnt = 2 ** (-i)
+        new_decimal = num + decimal_pnt
+        if new_decimal > u:
+            binaryStr += '0'
+        else:
+            binaryStr += '1'
+            num = new_decimal
+        i += 1
+    return binaryStr
+
+def arith_encoding(img, block_size, sorted_probability):
+    tags = []
+    for i in range(len(img)):
+        tag = ''
+        l = 0.0
+        u = 1.0
+        value = int(img[i])
+        for _ in range(block_size):
+            new_l = l + (u - l) * sorted_probability.get(value, 0)
+            new_u = l + (u - l) * sorted_probability.get(value + 1, 0)
+            if new_l >= 0.5 and new_u < 0.5:
+                l = 2 * l - 1
+                u = 2 * u - 1
+                tag += '1'
+            elif new_l >= 0.25 and new_u < 0.75:
+                l = 2 * l - 0.5
+                u = 2 * u - 0.5
+                tag += '0'
+            elif new_l >= 0 and new_u < 0.5:
+                l = 2 * l
+                u = 2 * u
+                tag += '0'
+            elif new_l >= 0.5 and new_u <= 1.0:
+                l = 2 * l - 1
+                u = 2 * u - 1
+                tag += '1'
+            else:
+                break
+        tags.append(tag)
+    return tags
+
+def bitstring_to_bytes(s):
+    # Pad s to make it divisible by 8
+    num_bits = 8 - len(s) % 8
+    s += '0' * num_bits
+    return bytes(int(s[i: i + 8], 2) for i in range(0, len(s), 8))
+
+blockSize = 8
+
+# Normalize the segmented clothes image to be between 0 and 1
+segm_clothes_normalized = (segm_clothes - np.min(segm_clothes)) / (np.max(segm_clothes) - np.min(segm_clothes))
+
+# Scale the normalized image to be between 0 and 255
+scaled_segm_clothes = (segm_clothes_normalized * 255).astype(int)
+
+# Calculate pixel intensity histogram
+hist, bin_edges = np.histogram(scaled_segm_clothes.ravel(), bins=range(257), density=True)
+
+# Calculate cumulative distribution function
+cdf = np.cumsum(hist)
+
+# Map each pixel intensity to its cumulative probability
+probs_limits = {i: (cdf[i - 1] if i > 0 else 0, cdf[i]) for i in range(256)}
+
+# Step 4: Arithmetic Encoding
+block_size = 8
+
+# Flatten the grayscale image
+img = scaled_segm_clothes.flatten()
+
+# Compute the probability for each pixel value
+probability = {}
+for pix in img:
+    if pix in probability.keys():
+        probability[pix] += 1
+    else:
+        probability[pix] = 1
+
+# Sort the probability dictionary
+sorted_probability = {}
+for shade in range(256):
+    if shade in probability.keys():
+        sorted_probability[shade] = probability[shade]
+
+# Normalize the probabilities
+total_pixels = len(img)
+for p in sorted_probability:
+    sorted_probability[p] /= total_pixels
+
+# Apply arithmetic coding
+tags_segm_clothes = arith_encoding(scaled_segm_clothes.flatten(), block_size, sorted_probability)
+
+# Convert tags to bytes
+tags_bytes_array = []
+for tag in tags_segm_clothes:
+    tags_bytes_array.append(bitstring_to_bytes(tag))
+
+# Calculate the compressed size
+original_size_segm_clothes = segm_clothes.size * 8
+compressed_size_segm_clothes = sum(len(tag) for tag in tags_bytes_array)
+compression_ratio_segm_clothes = original_size_segm_clothes / compressed_size_segm_clothes
+
+print('-----------Segm_clothes compression-----------')
+print("Original size of segm_clothes:", original_size_segm_clothes, "bits")
+print("Compressed size of segm_clothes:", compressed_size_segm_clothes, "bits")
+print("Compression ratio of segm_clothes:", compression_ratio_segm_clothes)
+print("Shape of segm_clothes:", segm_clothes.shape)
